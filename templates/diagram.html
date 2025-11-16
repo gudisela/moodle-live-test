@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Diagram Drawing</title>
+    <style>
+        #canvasWrapper {
+            position: relative;
+            display: inline-block;
+        }
+        #backgroundImage {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        #drawingCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Draw on the diagram</h2>
+
+<div id="canvasWrapper">
+    <img id="backgroundImage" src="/get_diagram/{{ diagram_name }}" />
+    <canvas id="drawingCanvas"></canvas>
+</div>
+
+<br><br>
+
+<button onclick="saveDrawing()">Save Drawing</button>
+
+<script>
+window.onload = function () {
+    const bg = document.getElementById("backgroundImage");
+    const canvas = document.getElementById("drawingCanvas");
+    const ctx = canvas.getContext("2d");
+
+    bg.onload = function () {
+        canvas.width = bg.width;
+        canvas.height = bg.height;
+    };
+
+    let drawing = false;
+
+    canvas.addEventListener("mousedown", () => drawing = true);
+    canvas.addEventListener("mouseup", () => drawing = false);
+    canvas.addEventListener("mousemove", draw);
+
+    function draw(e) {
+        if (!drawing) return;
+
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "red";
+
+        ctx.lineTo(e.offsetX, e.offsetY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(e.offsetX, e.offsetY);
+    }
+
+    window.saveDrawing = function () {
+        const combined = combineLayers();
+        
+        fetch("/save_diagram", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                imageData: combined,
+                sourceDiagram: "{{ diagram_name }}"
+            })
+        })
+        .then(res => res.json())
+        .then(data => alert("Saved overlay: " + data.file));
+    };
+
+    function combineLayers() {
+        const finalCanvas = document.createElement("canvas");
+        finalCanvas.width = bg.width;
+        finalCanvas.height = bg.height;
+        const fctx = finalCanvas.getContext("2d");
+
+        fctx.drawImage(bg, 0, 0);
+        fctx.drawImage(canvas, 0, 0);
+
+        return finalCanvas.toDataURL("image/png");
+    }
+};
+</script>
+
+</body>
+</html>
