@@ -77,7 +77,7 @@ def get_overlay(filename):
 # 5. Diagram drawing page (Overlay tool)
 # -----------------------------
 @app.route("/diagram/<diagram_name>")
-def diagram_page(diagram_name):
+def diagram(diagram_name):
     """
     Example URL:
       /diagram/physics_light_q4.png
