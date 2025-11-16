@@ -71,3 +71,74 @@ def list_submissions():
 def download_file(filename):
     file_path = os.path.join('submissions', filename)
     return send_file(file_path, as_attachment=True)
+
+from flask import Flask, render_template, request, send_from_directory, jsonify
+import os
+import base64
+from datetime import datetime
+
+# --- Ensure directory exists for diagram overlays ---
+DIAGRAM_FOLDER = "diagrams"
+OVERLAY_FOLDER = "diagram_overlays"
+
+os.makedirs(DIAGRAM_FOLDER, exist_ok=True)
+os.makedirs(OVERLAY_FOLDER, exist_ok=True)
+
+# ----------------------------
+# 1. Serve background diagram
+# ----------------------------
+@app.route("/get_diagram/<filename>")
+def get_diagram(filename):
+    return send_from_directory(DIAGRAM_FOLDER, filename)
+
+# ----------------------------
+# 2. Serve saved overlay drawing
+# ----------------------------
+@app.route("/get_overlay/<filename>")
+def get_overlay(filename):
+    return send_from_directory(OVERLAY_FOLDER, filename)
+
+# ----------------------------------------------------
+# 3. Load the diagram drawing page with canvas overlay
+# ----------------------------------------------------
+@app.route("/diagram/<diagram_name>")
+def diagram(diagram_name):
+    """
+    diagram_name = filename of the PNG/JPG diagram stored in /diagrams
+    Example: /diagram/physics_light_q4.png
+    """
+    return render_template("diagram.html", diagram_name=diagram_name)
+
+# ----------------------------------------------------
+# 4. Save the student's overlay drawing
+# ----------------------------------------------------
+@app.route("/save_diagram", methods=["POST"])
+def save_diagram():
+    """
+    Receives JSON:
+    {
+        "imageData": "data:image/png;base64,iVBORw0KGgoAAA...",
+        "sourceDiagram": "physics_light_q4.png"
+    }
+    """
+    data = request.json
+    image_data = data.get("imageData")
+    diagram_name = data.get("sourceDiagram")
+
+    if not image_data:
+        return jsonify({"status": "error", "message": "No image data received"}), 400
+
+    # Remove base64 prefix
+    image_base64 = image_data.split(",")[1]
+
+    # Generate unique filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"overlay_{diagram_name}_{timestamp}.png"
+    filepath = os.path.join(OVERLAY_FOLDER, filename)
+
+    # Save file
+    with open(filepath, "wb") as f:
+        f.write(base64.b64decode(image_base64))
+
+    return jsonify({"status": "success", "file": filename})
+
