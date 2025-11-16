@@ -78,8 +78,9 @@ import base64
 from datetime import datetime
 
 # --- Ensure directory exists for diagram overlays ---
-DIAGRAM_FOLDER = "diagrams"
-OVERLAY_FOLDER = "diagram_overlays"
+
+DIAGRAM_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "diagrams")
+OVERLAY_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "diagram_overlays")
 
 os.makedirs(DIAGRAM_FOLDER, exist_ok=True)
 os.makedirs(OVERLAY_FOLDER, exist_ok=True)
