@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Draw on Diagram</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='drawing.css') }}">
+</head>
+<body>
+
+<h2>Complete the Diagram</h2>
+
+<div class="diagram-container">
+    <!-- Background exam diagram -->
+    <img id="bg-image" src="{{ url_for('static', filename='diagrams/' + diagram_filename) }}">
+
+    <!-- Transparent drawing canvas -->
+    <canvas id="draw-canvas"></canvas>
+</div>
+
+<div class="toolbar">
+    <button onclick="setMode('draw')">✏ Draw</button>
+    <button onclick="setMode('erase')">🩹 Erase</button>
+    <button onclick="clearCanvas()">🗑 Clear</button>
+    <button onclick="submitDrawing()">💾 Save</button>
+</div>
+
+<script>
+    const submitUrl = "{{ submit_url }}";
+</script>
+
+<script src="{{ url_for('static', filename='drawing.js') }}"></script>
+
+</body>
+</html>

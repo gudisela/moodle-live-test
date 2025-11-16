@@ -1,0 +1,19 @@
+.diagram-container {
+    position: relative;
+    display: inline-block;
+}
+
+#bg-image {
+    width: 600px;
+}
+
+#draw-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+.toolbar button {
+    margin: 5px;
+    padding: 8px 15px;
+    font-size: 16px;
+}
