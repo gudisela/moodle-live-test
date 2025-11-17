@@ -9,99 +9,41 @@
   body{font-family:Arial, Helvetica, sans-serif; margin:14px; color:#111;}
   h2{margin-bottom:10px;}
   .container{display:flex; gap:18px; align-items:flex-start;}
-  /* responsive: column on narrow screens */
-  @media(max-width:900px){
-    .container{flex-direction:column;}
-  }
-
-  /* QUESTION PANEL */
-  .qpanel{
-    flex: 0 0 48%;
-    max-width:48%;
-    min-width:260px;
-    border:1px solid #ddd;
-    padding:12px;
-    box-sizing:border-box;
-    background:#fafafa;
-    overflow:hidden;
-  }
+  @media(max-width:900px){ .container{flex-direction:column;} }
+  .qpanel{ flex:0 0 48%; max-width:48%; min-width:260px; border:1px solid #ddd; padding:12px; box-sizing:border-box; background:#fafafa; overflow:hidden; }
   .qpanel h3{margin-top:0;}
-  .qimg-wrap{
-    width:100%;
-    height: calc(100vh - 220px);
-    overflow:auto;
-    border:1px dashed #eee;
-    padding:8px;
-    box-sizing:border-box;
-    background:#fff;
-  }
+  .qimg-wrap{ width:100%; height: calc(100vh - 220px); overflow:auto; border:1px dashed #eee; padding:8px; box-sizing:border-box; background:#fff; }
   .qimg-wrap img{display:block; width:100%; height:auto; object-fit:contain;}
-
-  /* DRAWING PANEL */
-  .dpanel{
-    flex: 0 0 52%;
-    max-width:52%;
-    min-width:300px;
-    box-sizing:border-box;
-    text-align:center;
-  }
-  .canvas-wrapper{
-    width: var(--canvas-w);
-    height: var(--canvas-h);
-    max-width:100%;
-    border:1px solid #bbb;
-    margin: 0 auto;
-    position: relative;
-    background:#fff;
-  }
-  /* background image (drawn to the canvas, hidden element) */
+  .dpanel{ flex:0 0 52%; max-width:52%; min-width:300px; box-sizing:border-box; text-align:center; }
+  .canvas-wrapper{ width: var(--canvas-w); height: var(--canvas-h); max-width:100%; border:1px solid #bbb; margin: 0 auto; position: relative; background:#fff; touch-action: none; }
   #bgImg{ display:none; }
-
-  /* control bar */
   .controls{ margin-top: 10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
-  .controls button, .controls input[type="range"], .controls select {
-    padding:8px 10px; font-size:14px;
-  }
+  .controls button, .controls input[type="range"], .controls select { padding:8px 10px; font-size:14px; }
   .small { font-size:13px; color:#444; margin-top:6px; text-align:center; }
-
-  /* answer area */
   .answer-area{ margin-top:14px; }
   .answer-area textarea{ width:100%; min-height:110px; padding:10px; font-size:15px; box-sizing:border-box; }
   .meta-row{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:center; }
   .meta-row input[type="text"]{ padding:8px; font-size:14px; width:220px; }
-
-  /* mobile adjustments */
-  @media(max-width:900px){
-    .qpanel, .dpanel { max-width:100%; flex-basis:100%; }
-    .canvas-wrapper { margin-left:auto; margin-right:auto; }
-  }
 </style>
 </head>
 <body>
   <h2>Question {{ qid }}</h2>
 
   <div class="container">
-    <!-- Question text (read-only) -->
     <div class="qpanel" aria-label="Question text">
       <h3>Question (Read-only)</h3>
       <div class="qimg-wrap" id="qimgWrap">
-        <!-- served by /question_file/<qid>/<question_image> -->
         <img id="questionImage" src="/question_file/{{ qid }}/{{ question_image }}" alt="Question image">
       </div>
-
-      <div class="small">If the question text is long, scroll inside the box. Use pinch/zoom on mobile if needed.</div>
+      <div class="small">Scroll the question area if needed. Pinch/zoom the diagram to draw precisely.</div>
     </div>
 
-    <!-- Drawing area -->
     <div class="dpanel" aria-label="Drawing area">
       <h3>Diagram — draw in the box (you may draw outside the printed diagram)</h3>
 
       <div class="canvas-wrapper" id="canvasWrapper">
-        <!-- hidden background image element used to draw the diagram onto the canvas -->
         <img id="bgImg" src="/question_file/{{ qid }}/{{ diagram_image }}" alt="Diagram to draw on">
-
-        <!-- visible canvas where student draws (we will merge to an offscreen canvas on save) -->
-        <canvas id="drawCanvas" width="900" height="650" style="touch-action: none; display:block;"></canvas>
+        <canvas id="drawCanvas" width="900" height="650" style="display:block;"></canvas>
       </div>
 
       <div class="controls">
@@ -118,7 +60,7 @@
         <button id="submitBtn">Submit</button>
       </div>
 
-      <div class="small">Tip: draw with finger/stylus or mouse. Use Eraser to remove strokes. Lines are smoothed.</div>
+      <div class="small">Tip: use one finger for drawing. Use two fingers to pinch-zoom or to pan. On desktop use mouse wheel to zoom.</div>
 
       <div class="answer-area">
         <label><strong>Type your short answers here (write parts in order):</strong></label>
@@ -134,134 +76,134 @@
   </div>
 
 <script>
-/* ---------- CONFIG ---------- */
-const CANVAS_W = 900, CANVAS_H = 650;
-const DIAGRAM_TARGET_W = 600; // desired diagram width inside canvas
+/* ---------- Config ---------- */
 const canvas = document.getElementById('drawCanvas');
 const ctx = canvas.getContext('2d');
 const bgImg = document.getElementById('bgImg');
-let penSize = document.getElementById('penSize');
-let toolSel = document.getElementById('tool');
+const wrapper = document.getElementById('canvasWrapper');
+const rectUpdate = () => canvas.getBoundingClientRect();
+const CANVAS_W = canvas.width, CANVAS_H = canvas.height;
+const DIAGRAM_TARGET_W = 600; // target diagram width inside canvas
 
-canvas.width = CANVAS_W;
-canvas.height = CANVAS_H;
+/* ---------- Transform state ---------- */
+let zoom = 1.0;            // zoom factor (1 = fitted scale)
+let offsetX = 0, offsetY = 0; // panning offsets in canvas coordinate units
+const MIN_ZOOM = 0.6, MAX_ZOOM = 3.0;
 
-/* ---------- Drawing state & stack for undo ---------- */
+/* ---------- Drawing state ---------- */
 let drawing = false;
-let lastPos = {x:0,y:0};
-let paths = []; // stack of paths for undo (each path is an array of points + options)
 let currentPath = null;
+let paths = []; // stored as logical points (in canvas coordinates BEFORE transform)
+const penSizeControl = document.getElementById('penSize');
+const toolSel = document.getElementById('tool');
 
-/* ---------- Utility to get pointer pos relative to canvas ---------- */
-function getPointerPos(e) {
+/* ---------- Helpers: map client pointer -> canvas coordinate (logical canvas units) ---------- */
+function clientToCanvas(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  const isTouch = e.touches && e.touches.length;
-  const clientX = isTouch ? e.touches[0].clientX : e.clientX;
-  const clientY = isTouch ? e.touches[0].clientY : e.clientY;
-  return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
+  // x_canvas_raw = (client - rect.left) * (canvas.width / rect.width)
+  const x_canvas_raw = (clientX - rect.left) * (canvas.width / rect.width);
+  const y_canvas_raw = (clientY - rect.top) * (canvas.height / rect.height);
+  // logical coordinate before transform:
+  const x_logical = (x_canvas_raw - offsetX) / zoom;
+  const y_logical = (y_canvas_raw - offsetY) / zoom;
+  return { x: x_logical, y: y_logical };
 }
 
-/* ---------- Start a new path ---------- */
-function startPath(e) {
-  e.preventDefault();
+/* ---------- Helpers: map logical -> screen (canvas pixel after transform) ---------- */
+function logicalToScreen(pt) {
+  return { x: pt.x * zoom + offsetX, y: pt.y * zoom + offsetY };
+}
+
+/* ---------- Pointer events for drawing ---------- */
+function startStroke(e) {
+  // only start drawing for single-touch or left mouse button
+  if (e.pointerType === 'touch' && (e.touches && e.touches.length > 1)) return;
+  if (e.buttons !== undefined && e.buttons !== 1 && e.pointerType !== 'touch') return;
+
   drawing = true;
-  currentPath = { points: [], size: parseInt(penSize.value,10), color: '#000000', mode: toolSel.value };
-  const p = getPointerPos(e);
+  currentPath = { points: [], size: parseInt(penSizeControl.value,10), mode: toolSel.value || 'draw' };
+  const p = getEventPoint(e);
   currentPath.points.push(p);
-  lastPos = p;
+  redraw();
 }
-function movePath(e) {
+function moveStroke(e) {
   if (!drawing) return;
-  const p = getPointerPos(e);
+  const p = getEventPoint(e);
   currentPath.points.push(p);
-  lastPos = p;
-  redrawCanvas();
+  redraw();
 }
-function endPath(e) {
+function endStroke(e) {
   if (!drawing) return;
   drawing = false;
-  // save path if it contains points
-  if (currentPath && currentPath.points.length>0) {
+  if (currentPath && currentPath.points.length) {
     paths.push(currentPath);
     currentPath = null;
   }
 }
+function getEventPoint(e) {
+  let clientX, clientY;
+  if (e.touches && e.touches.length) {
+    clientX = e.touches[0].clientX;
+    clientY = e.touches[0].clientY;
+  } else {
+    clientX = (e.clientX !== undefined ? e.clientX : e.pageX);
+    clientY = (e.clientY !== undefined ? e.clientY : e.pageY);
+  }
+  return clientToCanvas(clientX, clientY);
+}
 
-/* ---------- Redraw canvas from BG + all paths ---------- */
-function redrawCanvas() {
+/* ---------- Render function ---------- */
+function redraw() {
   // clear
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Draw centered background diagram (scaled) onto the canvas - we DRAW the bg here for preview; final merge uses offscreen canvas for highest-res
-  drawCenteredDiagramOnCanvas(ctx, bgImg, canvas.width, canvas.height);
+  // draw white background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  // Draw existing paths
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  for (let p of paths) {
-    drawPath(ctx, p);
+  // draw centered diagram scaled by zoom with offsets
+  if (bgImg.complete) {
+    const cfg = computeDiagramScaleAndOffsets(bgImg.naturalWidth, bgImg.naturalHeight, canvas.width, canvas.height);
+    const drawW = cfg.drawW * zoom;
+    const drawH = cfg.drawH * zoom;
+    const left = cfg.left * zoom + offsetX;
+    const top = cfg.top * zoom + offsetY;
+    ctx.drawImage(bgImg, left, top, drawW, drawH);
   }
-  // draw current path on top
+
+  // draw all saved paths (transform logical->screen)
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  for (let p of paths) drawPath(ctx, p);
   if (currentPath) drawPath(ctx, currentPath);
 }
-function drawPath(ctx, p) {
-  if (!p || p.points.length===0) return;
+
+/* draw single path (p.points are logical coords) */
+function drawPath(ctxLocal, p) {
+  if (!p || !p.points || p.points.length===0) return;
   if (p.mode === 'erase') {
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.strokeStyle = 'rgba(0,0,0,1)';
+    ctxLocal.globalCompositeOperation = 'destination-out';
+    ctxLocal.strokeStyle = 'rgba(0,0,0,1)';
   } else {
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.strokeStyle = p.color || '#000';
+    ctxLocal.globalCompositeOperation = 'source-over';
+    ctxLocal.strokeStyle = '#000';
   }
-  ctx.lineWidth = p.size;
-  ctx.beginPath();
-  ctx.moveTo(p.points[0].x, p.points[0].y);
+  ctxLocal.lineWidth = p.size * zoom; // scale stroke on zoom for consistent visual
+  ctxLocal.beginPath();
+  let s = logicalToScreen(p.points[0]);
+  ctxLocal.moveTo(s.x, s.y);
   for (let i=1;i<p.points.length;i++) {
-    // smoothing: draw quadratic curve between points
-    const prev = p.points[i-1];
-    const cur = p.points[i];
+    const prev = logicalToScreen(p.points[i-1]);
+    const cur  = logicalToScreen(p.points[i]);
     const cx = (prev.x + cur.x)/2;
     const cy = (prev.y + cur.y)/2;
-    ctx.quadraticCurveTo(prev.x, prev.y, cx, cy);
+    ctxLocal.quadraticCurveTo(prev.x, prev.y, cx, cy);
   }
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.globalCompositeOperation = 'source-over';
+  ctxLocal.stroke();
+  ctxLocal.globalCompositeOperation = 'source-over';
 }
 
-/* ---------- Event listeners for pointer/touch ---------- */
-canvas.addEventListener('mousedown', startPath);
-canvas.addEventListener('mousemove', movePath);
-window.addEventListener('mouseup', endPath);
-
-canvas.addEventListener('touchstart', startPath, {passive:false});
-canvas.addEventListener('touchmove', movePath, {passive:false});
-window.addEventListener('touchend', endPath);
-
-/* ---------- Buttons ---------- */
-document.getElementById('clearBtn').addEventListener('click', function(){
-  if (!confirm('Clear all strokes?')) return;
-  paths = [];
-  currentPath = null;
-  redrawCanvas();
-});
-document.getElementById('undoBtn').addEventListener('click', function(){
-  paths.pop();
-  redrawCanvas();
-});
-
-/* ---------- Line tool handling (straight lines) ---------- */
-let lineStart = null;
-toolSel.addEventListener('change', ()=> {
-  // if switching to line, change cursor or behavior
-});
-canvas.addEventListener('dblclick', function(e){
-  // optional: double-click to finish a straight line start/stop
-});
-
-/* ---------- Centered diagram drawing logic ---------- */
+/* ---------- Compute diagram scale/offset for CENTERED placement (natural units) ---------- */
 function computeDiagramScaleAndOffsets(imgW, imgH, canvasW, canvasH) {
-  // fit diagram width to DIAGRAM_TARGET_W (if image wider than target, scale down)
   const targetW = Math.min(DIAGRAM_TARGET_W, canvasW - 80);
   const scale = targetW / imgW;
   const drawW = imgW * scale;
@@ -270,83 +212,219 @@ function computeDiagramScaleAndOffsets(imgW, imgH, canvasW, canvasH) {
   const top  = (canvasH - drawH)/2;
   return { drawW, drawH, left, top };
 }
-function drawCenteredDiagramOnCanvas(ctxLocal, imgElement, canvasW, canvasH) {
-  if (!imgElement || !imgElement.complete) {
-    // nothing yet
-    return;
+
+/* ---------- Touch pinch/ pan handlers ---------- */
+let isPointerDown = false;
+let twoFinger = false;
+let lastTouchDist = 0;
+let lastTouchMid = null;
+let lastPanClient = null;
+let startZoom = null;
+let startOffset = null;
+
+function dist(t0, t1){ return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY); }
+function midPoint(t0,t1){ return { clientX: (t0.clientX+t1.clientX)/2, clientY:(t0.clientY+t1.clientY)/2 }; }
+
+wrapper.addEventListener('touchstart', function(e){
+  if (e.touches.length === 2) {
+    twoFinger = true;
+    lastTouchDist = dist(e.touches[0], e.touches[1]);
+    lastTouchMid = midPoint(e.touches[0], e.touches[1]);
+    startZoom = zoom;
+    startOffset = { x: offsetX, y: offsetY };
+  } else {
+    twoFinger = false;
   }
-  const naturalW = imgElement.naturalWidth;
-  const naturalH = imgElement.naturalHeight;
-  const cfg = computeDiagramScaleAndOffsets(naturalW, naturalH, canvasW, canvasH);
-  ctxLocal.drawImage(imgElement, cfg.left, cfg.top, cfg.drawW, cfg.drawH);
-}
+}, {passive:false});
 
-/* when background image loaded, redraw */
-bgImg.onload = function(){
-  redrawCanvas();
-  // ensure question imagepane scroll position (if any) remains
-};
+wrapper.addEventListener('touchmove', function(e){
+  if (e.touches.length === 2) {
+    e.preventDefault(); // prevent page scroll
+    const newDist = dist(e.touches[0], e.touches[1]);
+    const newMid = midPoint(e.touches[0], e.touches[1]);
+    // compute client->canvas point for midpoint
+    const rect = canvas.getBoundingClientRect();
+    const midCanvasBefore = { x: (lastTouchMid.clientX - rect.left) * (canvas.width/rect.width),
+                              y: (lastTouchMid.clientY - rect.top)  * (canvas.height/rect.height) };
+    // logical point under midpoint
+    const logicalMid = { x: (midCanvasBefore.x - startOffset.x)/startZoom, y: (midCanvasBefore.y - startOffset.y)/startZoom };
 
-/* ---------- On submit: merge high-resolution bg + strokes into a single PNG ---------- */
+    // update zoom
+    const ratio = newDist / lastTouchDist;
+    let newZoom = startZoom * ratio;
+    newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+
+    // compute new offset so that logicalMid maps to same screen (midpoint)
+    const midCanvasNow = { x: (newMid.clientX - rect.left) * (canvas.width/rect.width),
+                           y: (newMid.clientY - rect.top)  * (canvas.height/rect.height) };
+    offsetX = midCanvasNow.x - logicalMid.x * newZoom;
+    offsetY = midCanvasNow.y - logicalMid.y * newZoom;
+    zoom = newZoom;
+    redraw();
+  } else if (e.touches.length === 1 && !drawing) {
+    // single-finger pan when not drawing? (we avoid conflict: drawing is started by touch on canvas)
+    // do nothing here; drawing touch events handle single-finger draw
+  }
+}, {passive:false});
+
+wrapper.addEventListener('touchend', function(e){
+  if (e.touches.length < 2) {
+    twoFinger = false;
+    lastTouchDist = 0;
+    lastTouchMid = null;
+    startZoom = null;
+    startOffset = null;
+  }
+}, {passive:false});
+
+/* ---------- Mouse wheel zoom (desktop) ---------- */
+wrapper.addEventListener('wheel', function(e){
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.clientX, clientY = e.clientY;
+  const canvasClientX = (clientX - rect.left) * (canvas.width/rect.width);
+  const canvasClientY = (clientY - rect.top)  * (canvas.height/rect.height);
+
+  const delta = -e.deltaY * 0.001;
+  let newZoom = zoom * (1 + delta);
+  newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+
+  // logical point under mouse
+  const logicalX = (canvasClientX - offsetX) / zoom;
+  const logicalY = (canvasClientY - offsetY) / zoom;
+
+  // new offset so point remains under cursor
+  offsetX = canvasClientX - logicalX * newZoom;
+  offsetY = canvasClientY - logicalY * newZoom;
+  zoom = newZoom;
+  redraw();
+}, {passive:false});
+
+/* ---------- Undo / Clear ---------- */
+document.getElementById('clearBtn').addEventListener('click', function(){
+  if (!confirm('Clear all strokes?')) return;
+  paths = []; currentPath = null; redraw();
+});
+document.getElementById('undoBtn').addEventListener('click', function(){ paths.pop(); redraw(); });
+
+/* ---------- Pointer (mouse) drawing ---------- */
+let mouseDown = false;
+canvas.addEventListener('pointerdown', function(e){
+  // only handle left button or touch
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  // If two-finger gesture in progress, ignore
+  if (twoFinger) return;
+  // start stroke
+  mouseDown = true;
+  drawing = true;
+  currentPath = { points: [], size: parseInt(penSizeControl.value||penSizeControl.value,10) || 3, mode: toolSel.value || 'draw' };
+  const p = clientToCanvas(e.clientX, e.clientY);
+  currentPath.points.push(p);
+  redraw();
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', function(e){
+  if (!mouseDown) return;
+  if (!drawing) return;
+  const p = clientToCanvas(e.clientX, e.clientY);
+  currentPath.points.push(p);
+  redraw();
+});
+window.addEventListener('pointerup', function(e){
+  if (mouseDown) {
+    mouseDown = false;
+    drawing = false;
+    if (currentPath && currentPath.points.length) {
+      paths.push(currentPath);
+      currentPath = null;
+    }
+    redraw();
+  }
+});
+
+/* ---------- Touch drawing fallback for some browsers ---------- */
+canvas.addEventListener('touchstart', function(e){
+  if (e.touches.length === 1 && !twoFinger) {
+    // start drawing
+    const t = e.touches[0];
+    drawing = true;
+    currentPath = { points: [], size: parseInt(penSizeControl.value,10), mode: toolSel.value || 'draw' };
+    currentPath.points.push(clientToCanvas(t.clientX, t.clientY));
+    redraw();
+  }
+}, {passive:false});
+canvas.addEventListener('touchmove', function(e){
+  if (drawing && e.touches.length === 1) {
+    const t = e.touches[0];
+    currentPath.points.push(clientToCanvas(t.clientX, t.clientY));
+    e.preventDefault();
+    redraw();
+  }
+}, {passive:false});
+canvas.addEventListener('touchend', function(e){
+  if (drawing) {
+    drawing = false;
+    if (currentPath && currentPath.points.length) paths.push(currentPath);
+    currentPath = null;
+    redraw();
+  }
+}, {passive:false});
+
+/* ---------- Save merged image (background + strokes) ---------- */
 document.getElementById('submitBtn').addEventListener('click', async function(){
   const studentName = document.getElementById('studentName').value.trim();
   if (!studentName) { alert('Please enter student name'); return; }
 
   const answerText = document.getElementById('answerText').value;
 
-  // Create an offscreen canvas at the same size as visible canvas (900x650) - good enough resolution
+  // offscreen canvas (same logical size)
   const off = document.createElement('canvas');
   off.width = canvas.width;
   off.height = canvas.height;
   const octx = off.getContext('2d');
 
-  // draw background diagram (use bgImg natural size scaled to target) centered
-  // reuse computeDiagramScaleAndOffsets
+  // fill white
+  octx.fillStyle = '#ffffff';
+  octx.fillRect(0,0,off.width, off.height);
+
+  // draw diagram at current zoom/offset
   if (bgImg.complete) {
     const cfg = computeDiagramScaleAndOffsets(bgImg.naturalWidth, bgImg.naturalHeight, off.width, off.height);
-    octx.fillStyle = '#ffffff';
-    octx.fillRect(0,0,off.width,off.height);
-    octx.drawImage(bgImg, cfg.left, cfg.top, cfg.drawW, cfg.drawH);
-  } else {
-    octx.fillStyle = '#ffffff'; octx.fillRect(0,0,off.width,off.height);
+    const drawW = cfg.drawW * zoom;
+    const drawH = cfg.drawH * zoom;
+    const left = cfg.left * zoom + offsetX;
+    const top = cfg.top * zoom + offsetY;
+    octx.drawImage(bgImg, left, top, drawW, drawH);
   }
 
-  // draw all paths onto offscreen canvas (we must re-render using the same algorithm)
+  // draw strokes (paths logical -> screen)
+  octx.lineJoin = 'round'; octx.lineCap = 'round';
   for (let p of paths) {
-    if (!p || p.points.length===0) continue;
+    if (!p || !p.points || p.points.length===0) continue;
     if (p.mode === 'erase') {
       octx.globalCompositeOperation = 'destination-out';
       octx.strokeStyle = 'rgba(0,0,0,1)';
     } else {
       octx.globalCompositeOperation = 'source-over';
-      octx.strokeStyle = p.color || '#000';
+      octx.strokeStyle = '#000';
     }
-    octx.lineWidth = p.size;
-    octx.lineJoin = 'round';
-    octx.lineCap = 'round';
+    octx.lineWidth = p.size * zoom;
     octx.beginPath();
-    octx.moveTo(p.points[0].x, p.points[0].y);
-    for (let i=1;i<p.points.length;i++){
-      const prev = p.points[i-1];
-      const cur = p.points[i];
+    const s0 = logicalToScreen(p.points[0]);
+    octx.moveTo(s0.x, s0.y);
+    for (let i=1;i<p.points.length;i++) {
+      const prev = logicalToScreen(p.points[i-1]);
+      const cur  = logicalToScreen(p.points[i]);
       const cx = (prev.x + cur.x)/2;
       const cy = (prev.y + cur.y)/2;
       octx.quadraticCurveTo(prev.x, prev.y, cx, cy);
     }
     octx.stroke();
-    octx.beginPath();
     octx.globalCompositeOperation = 'source-over';
   }
 
-  // also draw currentPath if any
-  if (currentPath) {
-    drawPath(octx, currentPath);
-  }
-
-  // final dataURL
   const dataURL = off.toDataURL('image/png');
 
-  // POST to server save endpoint (existing /save_exam_answer)
   document.getElementById('statusText').textContent = "Saving...";
   try {
     const res = await fetch('/save_exam_answer', {
@@ -373,11 +451,16 @@ document.getElementById('submitBtn').addEventListener('click', async function(){
   }
 });
 
-/* ---------- initialize: load bgImg by setting src attr already set; copy of bgImg will be used */
-(function init(){
-  // when page loads, draw initial state (if image already cached)
-  if (bgImg.complete) redrawCanvas();
-})();
+/* ---------- Redraw when bg loads ---------- */
+bgImg.onload = function(){ 
+  // initial fit: we want diagram to occupy DIAGRAM_TARGET_W inside canvas at zoom=1
+  // compute initial cfg and adjust zoom so that diagram natural width -> target width (we already use computeDiagramScaleAndOffsets)
+  // default zoom = 1 => compute centered placement; no change necessary
+  redraw();
+};
+
+/* ---------- Initialize display ---------- */
+redraw();
 </script>
 </body>
 </html>
