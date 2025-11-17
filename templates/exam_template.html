@@ -1,92 +1,383 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Exam Question</title>
-    <style>
-        body { font-family: Arial; margin: 20px; }
-        .container { display: flex; gap: 20px; }
-        .box { border: 1px solid #ccc; padding: 10px; }
-    </style>
+<meta charset="utf-8" />
+<title>Exam Question — {{ qid }}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root{--canvas-w:900px; --canvas-h:650px; --diagram-target-w:600px;}
+  body{font-family:Arial, Helvetica, sans-serif; margin:14px; color:#111;}
+  h2{margin-bottom:10px;}
+  .container{display:flex; gap:18px; align-items:flex-start;}
+  /* responsive: column on narrow screens */
+  @media(max-width:900px){
+    .container{flex-direction:column;}
+  }
+
+  /* QUESTION PANEL */
+  .qpanel{
+    flex: 0 0 48%;
+    max-width:48%;
+    min-width:260px;
+    border:1px solid #ddd;
+    padding:12px;
+    box-sizing:border-box;
+    background:#fafafa;
+    overflow:hidden;
+  }
+  .qpanel h3{margin-top:0;}
+  .qimg-wrap{
+    width:100%;
+    height: calc(100vh - 220px);
+    overflow:auto;
+    border:1px dashed #eee;
+    padding:8px;
+    box-sizing:border-box;
+    background:#fff;
+  }
+  .qimg-wrap img{display:block; width:100%; height:auto; object-fit:contain;}
+
+  /* DRAWING PANEL */
+  .dpanel{
+    flex: 0 0 52%;
+    max-width:52%;
+    min-width:300px;
+    box-sizing:border-box;
+    text-align:center;
+  }
+  .canvas-wrapper{
+    width: var(--canvas-w);
+    height: var(--canvas-h);
+    max-width:100%;
+    border:1px solid #bbb;
+    margin: 0 auto;
+    position: relative;
+    background:#fff;
+  }
+  /* background image (drawn to the canvas, hidden element) */
+  #bgImg{ display:none; }
+
+  /* control bar */
+  .controls{ margin-top: 10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .controls button, .controls input[type="range"], .controls select {
+    padding:8px 10px; font-size:14px;
+  }
+  .small { font-size:13px; color:#444; margin-top:6px; text-align:center; }
+
+  /* answer area */
+  .answer-area{ margin-top:14px; }
+  .answer-area textarea{ width:100%; min-height:110px; padding:10px; font-size:15px; box-sizing:border-box; }
+  .meta-row{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:center; }
+  .meta-row input[type="text"]{ padding:8px; font-size:14px; width:220px; }
+
+  /* mobile adjustments */
+  @media(max-width:900px){
+    .qpanel, .dpanel { max-width:100%; flex-basis:100%; }
+    .canvas-wrapper { margin-left:auto; margin-right:auto; }
+  }
+</style>
 </head>
 <body>
+  <h2>Question {{ qid }}</h2>
 
-<h2>Question {{ qid }}</h2>
+  <div class="container">
+    <!-- Question text (read-only) -->
+    <div class="qpanel" aria-label="Question text">
+      <h3>Question (Read-only)</h3>
+      <div class="qimg-wrap" id="qimgWrap">
+        <!-- served by /question_file/<qid>/<question_image> -->
+        <img id="questionImage" src="/question_file/{{ qid }}/{{ question_image }}" alt="Question image">
+      </div>
 
-<div class="container">
+      <div class="small">If the question text is long, scroll inside the box. Use pinch/zoom on mobile if needed.</div>
+    </div>
 
-    <!-- Left: Diagram with drawing overlay -->
-    <div class="box">
-        <h3>Diagram (Draw on it)</h3>
-        <div style="position: relative;">
-            <img id="diagramImage"
-                 src="/question_file/{{ qid }}/{{ diagram_image }}"
-                 style="width: 400px;">
+    <!-- Drawing area -->
+    <div class="dpanel" aria-label="Drawing area">
+      <h3>Diagram — draw in the box (you may draw outside the printed diagram)</h3>
 
-            <canvas id="drawCanvas"
-                    width="400"
-                    height="300"
-                    style="border:1px solid black; position:absolute; left:0; top:0;"></canvas>
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <!-- hidden background image element used to draw the diagram onto the canvas -->
+        <img id="bgImg" src="/question_file/{{ qid }}/{{ diagram_image }}" alt="Diagram to draw on">
+
+        <!-- visible canvas where student draws (we will merge to an offscreen canvas on save) -->
+        <canvas id="drawCanvas" width="900" height="650" style="touch-action: none; display:block;"></canvas>
+      </div>
+
+      <div class="controls">
+        <label>Pen size <input id="penSize" type="range" min="1" max="10" value="3"></label>
+        <label>Tool
+          <select id="tool">
+            <option value="draw">Draw</option>
+            <option value="erase">Eraser</option>
+            <option value="line">Straight line</option>
+          </select>
+        </label>
+        <button id="undoBtn">Undo</button>
+        <button id="clearBtn">Clear</button>
+        <button id="submitBtn">Submit</button>
+      </div>
+
+      <div class="small">Tip: draw with finger/stylus or mouse. Use Eraser to remove strokes. Lines are smoothed.</div>
+
+      <div class="answer-area">
+        <label><strong>Type your short answers here (write parts in order):</strong></label>
+        <textarea id="answerText" placeholder="(a) ...  (b) ..."></textarea>
+
+        <div class="meta-row">
+          <input id="studentName" type="text" placeholder="Student name (required)">
+          <div style="flex:1"></div>
+          <span id="statusText" class="small"></span>
         </div>
+      </div>
     </div>
-
-    <!-- Right: Question text -->
-    <div class="box">
-        <h3>Question</h3>
-        <img src="/question_file/{{ qid }}/{{ question_image }}" style="width: 400px;">
-    </div>
-
-</div>
-
-<br>
-
-<h3>Your Answer</h3>
-<textarea id="answerText" style="width: 100%; height: 120px;"></textarea>
-
-<br><br>
-
-<button onclick="submitAnswer()">Submit Answer</button>
+  </div>
 
 <script>
-// Simple drawing on canvas
-let canvas = document.getElementById("drawCanvas");
-let ctx = canvas.getContext("2d");
+/* ---------- CONFIG ---------- */
+const CANVAS_W = 900, CANVAS_H = 650;
+const DIAGRAM_TARGET_W = 600; // desired diagram width inside canvas
+const canvas = document.getElementById('drawCanvas');
+const ctx = canvas.getContext('2d');
+const bgImg = document.getElementById('bgImg');
+let penSize = document.getElementById('penSize');
+let toolSel = document.getElementById('tool');
+
+canvas.width = CANVAS_W;
+canvas.height = CANVAS_H;
+
+/* ---------- Drawing state & stack for undo ---------- */
 let drawing = false;
+let lastPos = {x:0,y:0};
+let paths = []; // stack of paths for undo (each path is an array of points + options)
+let currentPath = null;
 
-canvas.addEventListener("mousedown", () => drawing = true);
-canvas.addEventListener("mouseup", () => drawing = false);
-canvas.addEventListener("mousemove", draw);
-
-function draw(e) {
-    if (!drawing) return;
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "black";
-
-    let rect = canvas.getBoundingClientRect();
-    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+/* ---------- Utility to get pointer pos relative to canvas ---------- */
+function getPointerPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const isTouch = e.touches && e.touches.length;
+  const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+  const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+  return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
 }
 
-// Save everything
-function submitAnswer() {
-    let overlayImage = canvas.toDataURL("image/png");
-
-    fetch("/save_exam_answer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            qid: "{{ qid }}",
-            studentName: "Student1",
-            answerText: document.getElementById("answerText").value,
-            overlayImage: overlayImage
-        })
-    })
-    .then(res => res.json())
-    .then(data => alert("Answer submitted!"));
+/* ---------- Start a new path ---------- */
+function startPath(e) {
+  e.preventDefault();
+  drawing = true;
+  currentPath = { points: [], size: parseInt(penSize.value,10), color: '#000000', mode: toolSel.value };
+  const p = getPointerPos(e);
+  currentPath.points.push(p);
+  lastPos = p;
 }
+function movePath(e) {
+  if (!drawing) return;
+  const p = getPointerPos(e);
+  currentPath.points.push(p);
+  lastPos = p;
+  redrawCanvas();
+}
+function endPath(e) {
+  if (!drawing) return;
+  drawing = false;
+  // save path if it contains points
+  if (currentPath && currentPath.points.length>0) {
+    paths.push(currentPath);
+    currentPath = null;
+  }
+}
+
+/* ---------- Redraw canvas from BG + all paths ---------- */
+function redrawCanvas() {
+  // clear
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Draw centered background diagram (scaled) onto the canvas - we DRAW the bg here for preview; final merge uses offscreen canvas for highest-res
+  drawCenteredDiagramOnCanvas(ctx, bgImg, canvas.width, canvas.height);
+
+  // Draw existing paths
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (let p of paths) {
+    drawPath(ctx, p);
+  }
+  // draw current path on top
+  if (currentPath) drawPath(ctx, currentPath);
+}
+function drawPath(ctx, p) {
+  if (!p || p.points.length===0) return;
+  if (p.mode === 'erase') {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.strokeStyle = 'rgba(0,0,0,1)';
+  } else {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = p.color || '#000';
+  }
+  ctx.lineWidth = p.size;
+  ctx.beginPath();
+  ctx.moveTo(p.points[0].x, p.points[0].y);
+  for (let i=1;i<p.points.length;i++) {
+    // smoothing: draw quadratic curve between points
+    const prev = p.points[i-1];
+    const cur = p.points[i];
+    const cx = (prev.x + cur.x)/2;
+    const cy = (prev.y + cur.y)/2;
+    ctx.quadraticCurveTo(prev.x, prev.y, cx, cy);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/* ---------- Event listeners for pointer/touch ---------- */
+canvas.addEventListener('mousedown', startPath);
+canvas.addEventListener('mousemove', movePath);
+window.addEventListener('mouseup', endPath);
+
+canvas.addEventListener('touchstart', startPath, {passive:false});
+canvas.addEventListener('touchmove', movePath, {passive:false});
+window.addEventListener('touchend', endPath);
+
+/* ---------- Buttons ---------- */
+document.getElementById('clearBtn').addEventListener('click', function(){
+  if (!confirm('Clear all strokes?')) return;
+  paths = [];
+  currentPath = null;
+  redrawCanvas();
+});
+document.getElementById('undoBtn').addEventListener('click', function(){
+  paths.pop();
+  redrawCanvas();
+});
+
+/* ---------- Line tool handling (straight lines) ---------- */
+let lineStart = null;
+toolSel.addEventListener('change', ()=> {
+  // if switching to line, change cursor or behavior
+});
+canvas.addEventListener('dblclick', function(e){
+  // optional: double-click to finish a straight line start/stop
+});
+
+/* ---------- Centered diagram drawing logic ---------- */
+function computeDiagramScaleAndOffsets(imgW, imgH, canvasW, canvasH) {
+  // fit diagram width to DIAGRAM_TARGET_W (if image wider than target, scale down)
+  const targetW = Math.min(DIAGRAM_TARGET_W, canvasW - 80);
+  const scale = targetW / imgW;
+  const drawW = imgW * scale;
+  const drawH = imgH * scale;
+  const left = (canvasW - drawW)/2;
+  const top  = (canvasH - drawH)/2;
+  return { drawW, drawH, left, top };
+}
+function drawCenteredDiagramOnCanvas(ctxLocal, imgElement, canvasW, canvasH) {
+  if (!imgElement || !imgElement.complete) {
+    // nothing yet
+    return;
+  }
+  const naturalW = imgElement.naturalWidth;
+  const naturalH = imgElement.naturalHeight;
+  const cfg = computeDiagramScaleAndOffsets(naturalW, naturalH, canvasW, canvasH);
+  ctxLocal.drawImage(imgElement, cfg.left, cfg.top, cfg.drawW, cfg.drawH);
+}
+
+/* when background image loaded, redraw */
+bgImg.onload = function(){
+  redrawCanvas();
+  // ensure question imagepane scroll position (if any) remains
+};
+
+/* ---------- On submit: merge high-resolution bg + strokes into a single PNG ---------- */
+document.getElementById('submitBtn').addEventListener('click', async function(){
+  const studentName = document.getElementById('studentName').value.trim();
+  if (!studentName) { alert('Please enter student name'); return; }
+
+  const answerText = document.getElementById('answerText').value;
+
+  // Create an offscreen canvas at the same size as visible canvas (900x650) - good enough resolution
+  const off = document.createElement('canvas');
+  off.width = canvas.width;
+  off.height = canvas.height;
+  const octx = off.getContext('2d');
+
+  // draw background diagram (use bgImg natural size scaled to target) centered
+  // reuse computeDiagramScaleAndOffsets
+  if (bgImg.complete) {
+    const cfg = computeDiagramScaleAndOffsets(bgImg.naturalWidth, bgImg.naturalHeight, off.width, off.height);
+    octx.fillStyle = '#ffffff';
+    octx.fillRect(0,0,off.width,off.height);
+    octx.drawImage(bgImg, cfg.left, cfg.top, cfg.drawW, cfg.drawH);
+  } else {
+    octx.fillStyle = '#ffffff'; octx.fillRect(0,0,off.width,off.height);
+  }
+
+  // draw all paths onto offscreen canvas (we must re-render using the same algorithm)
+  for (let p of paths) {
+    if (!p || p.points.length===0) continue;
+    if (p.mode === 'erase') {
+      octx.globalCompositeOperation = 'destination-out';
+      octx.strokeStyle = 'rgba(0,0,0,1)';
+    } else {
+      octx.globalCompositeOperation = 'source-over';
+      octx.strokeStyle = p.color || '#000';
+    }
+    octx.lineWidth = p.size;
+    octx.lineJoin = 'round';
+    octx.lineCap = 'round';
+    octx.beginPath();
+    octx.moveTo(p.points[0].x, p.points[0].y);
+    for (let i=1;i<p.points.length;i++){
+      const prev = p.points[i-1];
+      const cur = p.points[i];
+      const cx = (prev.x + cur.x)/2;
+      const cy = (prev.y + cur.y)/2;
+      octx.quadraticCurveTo(prev.x, prev.y, cx, cy);
+    }
+    octx.stroke();
+    octx.beginPath();
+    octx.globalCompositeOperation = 'source-over';
+  }
+
+  // also draw currentPath if any
+  if (currentPath) {
+    drawPath(octx, currentPath);
+  }
+
+  // final dataURL
+  const dataURL = off.toDataURL('image/png');
+
+  // POST to server save endpoint (existing /save_exam_answer)
+  document.getElementById('statusText').textContent = "Saving...";
+  try {
+    const res = await fetch('/save_exam_answer', {
+      method:'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        qid: "{{ qid }}",
+        studentName: studentName,
+        answerText: answerText,
+        overlayImage: dataURL
+      })
+    });
+    const j = await res.json();
+    if (j.status === 'success') {
+      document.getElementById('statusText').textContent = "Saved OK";
+      alert('Saved successfully.');
+    } else {
+      document.getElementById('statusText').textContent = "Save error";
+      alert('Save failed: ' + JSON.stringify(j));
+    }
+  } catch (err) {
+    document.getElementById('statusText').textContent = "Network error";
+    alert('Network error: ' + err.message);
+  }
+});
+
+/* ---------- initialize: load bgImg by setting src attr already set; copy of bgImg will be used */
+(function init(){
+  // when page loads, draw initial state (if image already cached)
+  if (bgImg.complete) redrawCanvas();
+})();
 </script>
-
 </body>
 </html>
