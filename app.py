@@ -23,6 +23,9 @@ DIAGRAM_FOLDER = os.path.join(BASE_DIR, "diagrams")
 OVERLAY_FOLDER = os.path.join(BASE_DIR, "diagram_overlays")
 QUESTIONS_DIR = os.path.join(BASE_DIR, "questions")
 EXAMS_DIR = os.path.join(BASE_DIR, "exams")
+ATTEMPTS_DIR = os.path.join(BASE_DIR, "attempts")
+DRAWINGS_DIR = os.path.join(BASE_DIR, "drawings")
+
 
 # create folders if not exist
 os.makedirs(SUBMISSIONS_DIR, exist_ok=True)
@@ -30,6 +33,8 @@ os.makedirs(DIAGRAM_FOLDER, exist_ok=True)
 os.makedirs(OVERLAY_FOLDER, exist_ok=True)
 os.makedirs(QUESTIONS_DIR, exist_ok=True)
 os.makedirs(EXAMS_DIR, exist_ok=True)
+os.makedirs(ATTEMPTS_DIR, exist_ok=True)
+os.makedirs(DRAWINGS_DIR, exist_ok=True)
 
 # -----------------------------
 # 1. Main text + drawing submission (Phase 1)
@@ -386,6 +391,146 @@ def exam_preview(exam_id):
     # For preview we'll render first question (extend later to full multi-question UI)
     first_q = exam["questions"][0] if exam["questions"] else None
     return render_template("exam_preview.html", exam=exam, question=first_q, exam_id=exam_id)
+
+
+# ------------------------------------------------------------------
+# Route: start exam -> redirect to first question
+# ------------------------------------------------------------------
+@app.route("/exam/start/<exam_id>")
+def exam_start(exam_id):
+    exam_folder = os.path.join(EXAMS_DIR, exam_id)
+    json_path = os.path.join(exam_folder, "exam.json")
+    if not os.path.exists(json_path):
+        return "Exam not found", 404
+    with open(json_path, "r", encoding="utf-8") as f:
+        exam = json.load(f)
+    total = len(exam.get("questions", []))
+    if total == 0:
+        return "No questions in exam", 404
+    # redirect to question 1
+    return redirect(url_for("exam_question", exam_id=exam_id, qindex=1))
+
+# ------------------------------------------------------------------
+# Route: show a question page
+# ------------------------------------------------------------------
+@app.route("/exam/<exam_id>/q/<int:qindex>")
+def exam_question(exam_id, qindex):
+    exam_folder = os.path.join(EXAMS_DIR, exam_id)
+    json_path = os.path.join(exam_folder, "exam.json")
+    if not os.path.exists(json_path):
+        return "Exam not found", 404
+    with open(json_path, "r", encoding="utf-8") as f:
+        exam = json.load(f)
+    questions = exam.get("questions", [])
+    total = len(questions)
+    if qindex < 1 or qindex > total:
+        return "Question index out of range", 404
+    question = questions[qindex-1]
+    # construct urls for images served via /exam_file/<exam_id>/<filename>
+    return render_template("student_exam.html",
+                           exam=exam,
+                           exam_id=exam_id,
+                           question=question,
+                           qindex=qindex,
+                           total=total)
+
+# ------------------------------------------------------------------
+# Endpoint: autosave per-question (saves drawing + text, returns saved filenames)
+# Expects JSON: { exam_id, qindex, studentName, answerText, overlayImage (dataURL) }
+# ------------------------------------------------------------------
+@app.route("/exam/autosave", methods=["POST"])
+def exam_autosave():
+    data = request.get_json()
+    if not data:
+        return jsonify({"status":"error","message":"No JSON received"}), 400
+
+    exam_id = data.get("exam_id")
+    qindex = int(data.get("qindex", 0))
+    student = data.get("studentName", "").strip().replace(" ", "_")
+    answerText = data.get("answerText", "")
+    overlayData = data.get("overlayImage")  # data:image/png;base64,...
+
+    if not exam_id or not student or qindex < 1:
+        return jsonify({"status":"error","message":"Missing params"}), 400
+
+    # ensure exam exists
+    exam_folder = os.path.join(EXAMS_DIR, exam_id)
+    json_path = os.path.join(exam_folder, "exam.json")
+    if not os.path.exists(json_path):
+        return jsonify({"status":"error","message":"Exam not found"}), 404
+    with open(json_path, "r", encoding="utf-8") as f:
+        exam = json.load(f)
+    questions = exam.get("questions", [])
+    if qindex > len(questions):
+        return jsonify({"status":"error","message":"Question index out of range"}), 400
+
+    q = questions[qindex-1]
+    qid = q.get("qid", f"q{qindex}")
+
+    # prepare student's attempt folder
+    student_folder = os.path.join(ATTEMPTS_DIR, exam_id)
+    os.makedirs(student_folder, exist_ok=True)
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    saved_overlay_filename = ""
+    if overlayData and overlayData.startswith("data:image"):
+        header, b64 = overlayData.split(",",1)
+        ext = "png"
+        saved_overlay_filename = f"{exam_id}_{student}_{qid}_{timestamp}.{ext}"
+        save_path = os.path.join(DRAWINGS_DIR, saved_overlay_filename)
+        with open(save_path, "wb") as f:
+            f.write(base64.b64decode(b64))
+
+    # Load or create attempt json for this student
+    attempt_file = os.path.join(student_folder, f"{student}.json")
+    if os.path.exists(attempt_file):
+        with open(attempt_file, "r", encoding="utf-8") as f:
+            attempt = json.load(f)
+    else:
+        attempt = {"exam_id": exam_id, "student": student, "answers": {}, "submitted": False, "last_saved": None}
+
+    # save the answer object for this qid
+    attempt["answers"][qid] = {
+        "qindex": qindex,
+        "answerText": answerText,
+        "overlay_file": saved_overlay_filename,
+        "saved_at": timestamp
+    }
+    attempt["last_saved"] = timestamp
+
+    # write attempt
+    with open(attempt_file, "w", encoding="utf-8") as f:
+        json.dump(attempt, f, indent=2)
+
+    return jsonify({"status":"success", "overlay_file": saved_overlay_filename, "attempt_file": os.path.basename(attempt_file)})
+
+# ------------------------------------------------------------------
+# Endpoint: final submit (marks attempt as submitted)
+# Expects JSON: { exam_id, studentName }
+# ------------------------------------------------------------------
+@app.route("/exam/submit", methods=["POST"])
+def exam_submit():
+    data = request.get_json()
+    exam_id = data.get("exam_id")
+    student = data.get("studentName", "").strip().replace(" ", "_")
+    if not exam_id or not student:
+        return jsonify({"status":"error","message":"Missing params"}), 400
+
+    student_folder = os.path.join(ATTEMPTS_DIR, exam_id)
+    attempt_file = os.path.join(student_folder, f"{student}.json")
+    if not os.path.exists(attempt_file):
+        return jsonify({"status":"error","message":"Attempt not found"}), 404
+
+    with open(attempt_file, "r", encoding="utf-8") as f:
+        attempt = json.load(f)
+    attempt["submitted"] = True
+    attempt["submitted_at"] = datetime.datetime.now().isoformat()
+
+    with open(attempt_file, "w", encoding="utf-8") as f:
+        json.dump(attempt, f, indent=2)
+
+    return jsonify({"status":"success", "message":"Submitted"})
 
 # -----------------------------
 # Run local
