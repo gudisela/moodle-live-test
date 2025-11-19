@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>All Exams</title>
+</head>
+<body>
+
+<h2>Available Exams</h2>
+
+<ul>
+{% for exam in exams %}
+  <li>
+    <strong>{{ exam.exam_id }}</strong> — {{ exam.title }}
+    <a href="/exam/start/{{ exam.exam_id }}">Start Exam</a>
+  </li>
+{% endfor %}
+</ul>
+
+</body>
+</html>

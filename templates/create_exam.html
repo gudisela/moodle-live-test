@@ -1,55 +1,87 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8"><title>Create Exam</title>
-  <style>
-    body{font-family:Arial;margin:16px}
-    .qblock{border:1px solid #ccc;padding:10px;margin:10px 0}
-    .actions{margin-top:12px}
-  </style>
+    <title>Create Exam</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        textarea { width: 100%; height: 80px; }
+        canvas { border: 1px solid #000; margin-top: 10px; }
+        .question-block { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+    </style>
 </head>
 <body>
-  <h2>Create Exam</h2>
-  <form id="examForm" method="post" action="/teacher/save_exam" enctype="multipart/form-data">
-    <label>Exam ID (optional): <input name="exam_id"></label><br>
-    <label>Title: <input name="title" required></label><br>
-    <label>Created by: <input name="created_by"></label><br><br>
 
-    <div id="questionsContainer"></div>
+<h2>Create Exam</h2>
 
-    <input type="hidden" name="q_count" id="q_count" value="0">
-    <div class="actions">
-      <button type="button" id="addQ">Add Question</button>
-      <button type="submit">Save Exam</button>
-    </div>
-  </form>
+<form action="/teacher/save_exam" method="POST">
+
+    <label>Exam ID:</label><br>
+    <input type="text" name="exam_id" required><br><br>
+
+    <label>Exam Title:</label><br>
+    <input type="text" name="title" required><br><br>
+
+    <div id="questions"></div>
+
+    <button type="button" onclick="addQuestion()">+ Add Question</button><br><br>
+
+    <button type="submit">Save Exam</button>
+</form>
 
 <script>
-let qIndex = 0;
-const container = document.getElementById('questionsContainer');
-document.getElementById('addQ').addEventListener('click', addQuestion);
-function addQuestion(){
-  qIndex++;
-  const html = `
-  <div class="qblock" id="qblock_${qIndex}">
-    <h3>Question ${qIndex}</h3>
-    <label>Question ID: <input name="q${qIndex}_id" value="q${qIndex}"></label><br>
-    <label>Marks: <input name="q${qIndex}_marks" value="4" size="4"></label><br>
-    <label>Instruction: <input name="q${qIndex}_instruction" size="60"></label><br>
-    <label>Model answer: <input name="q${qIndex}_model" size="60"></label><br>
-    <label>Question image: <input name="q${qIndex}_question" type="file" accept="image/*" required></label><br>
-    <label>Diagram image (optional): <input name="q${qIndex}_diagram" type="file" accept="image/*"></label><br>
-    <button type="button" onclick="removeQ(${qIndex})">Remove</button>
-  </div>`;
-  container.insertAdjacentHTML('beforeend', html);
-  document.getElementById('q_count').value = qIndex;
+let qCount = 0;
+
+function addQuestion() {
+    qCount++;
+    const qDiv = document.createElement("div");
+    qDiv.className = "question-block";
+    qDiv.innerHTML = `
+        <h3>Question ${qCount}</h3>
+        <textarea name="qtext_${qCount}" placeholder="Enter question text"></textarea><br><br>
+
+        <label>Diagram:</label><br>
+        <canvas id="canvas_${qCount}" width="400" height="250"></canvas>
+        <input type="hidden" name="diagram_${qCount}" id="diagram_${qCount}">
+
+        <br><button type="button" onclick="saveDiagram(${qCount})">Save Diagram</button>
+    `;
+
+    document.getElementById("questions").appendChild(qDiv);
+
+    initCanvas(qCount);
 }
-function removeQ(i){
-  const el = document.getElementById('qblock_'+i);
-  if (!el) return;
-  el.remove();
-  // Note: does not renumber q_count; creating new ones increments index - OK
+
+function initCanvas(id) {
+    const canvas = document.getElementById("canvas_" + id);
+    const ctx = canvas.getContext("2d");
+
+    let drawing = false;
+    let startX, startY;
+
+    canvas.onmousedown = (e) => {
+        drawing = true;
+        startX = e.offsetX;
+        startY = e.offsetY;
+    };
+
+    canvas.onmouseup = (e) => {
+        if (!drawing) return;
+        drawing = false;
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(e.offsetX, e.offsetY);
+        ctx.stroke();
+    };
+}
+
+function saveDiagram(id) {
+    const canvas = document.getElementById("canvas_" + id);
+    const data = canvas.toDataURL("image/png");
+    document.getElementById("diagram_" + id).value = data;
+    alert("Diagram Saved!");
 }
 </script>
+
 </body>
 </html>
