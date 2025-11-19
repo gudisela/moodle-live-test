@@ -374,6 +374,28 @@ def teacher_exams():
                 items.append({"exam_id": data.get("exam_id"), "title": data.get("title"), "created_at": data.get("created_at")})
     return render_template("list_exams.html", exams=items)
 
+@app.route("/exam/start/<exam_id>")
+def start_exam(exam_id):
+    exam_path = os.path.join(EXAMS_DIR, exam_id)
+
+    if not os.path.exists(exam_path):
+        return f"Exam {exam_id} not found", 404
+
+    import json
+
+    with open(os.path.join(exam_path, "meta.json")) as f:
+        meta = json.load(f)
+
+    with open(os.path.join(exam_path, "questions.json")) as f:
+        questions = json.load(f)
+
+    return render_template(
+        "student_exam.html",
+        exam_id=exam_id,
+        exam_title=meta["title"],
+        questions=questions
+    )
+
 # --- Serve exam files ---
 @app.route("/exam_file/<exam_id>/<filename>")
 def exam_file(exam_id, filename):
