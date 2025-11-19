@@ -22,12 +22,14 @@ SUBMISSIONS_DIR = os.path.join(BASE_DIR, "submissions")
 DIAGRAM_FOLDER = os.path.join(BASE_DIR, "diagrams")
 OVERLAY_FOLDER = os.path.join(BASE_DIR, "diagram_overlays")
 QUESTIONS_DIR = os.path.join(BASE_DIR, "questions")
+EXAMS_DIR = os.path.join(BASE_DIR, "exams")
 
 # create folders if not exist
 os.makedirs(SUBMISSIONS_DIR, exist_ok=True)
 os.makedirs(DIAGRAM_FOLDER, exist_ok=True)
 os.makedirs(OVERLAY_FOLDER, exist_ok=True)
 os.makedirs(QUESTIONS_DIR, exist_ok=True)
+os.makedirs(EXAMS_DIR, exist_ok=True)
 
 # -----------------------------
 # 1. Main text + drawing submission (Phase 1)
@@ -263,6 +265,127 @@ def save_exam_answer():
             f.write(overlay_bytes)
 
     return jsonify({"status": "success", "file": f"{save_base}.txt"})
+# -----------------------------
+# 10. Teacher creare exam form(Phase 4)
+# -----------------------------
+
+# --- Teacher: create exam form ---
+@app.route("/teacher/create_exam")
+def teacher_create_exam():
+    # render a page with a basic form to enter exam meta and upload multiple questions
+    return render_template("create_exam.html")
+
+# --- Teacher: save exam (multipart/form-data) ---
+@app.route("/teacher/save_exam", methods=["POST"])
+def teacher_save_exam():
+    """
+    Expects form data:
+      exam_id (optional) -> generated if empty
+      title
+      created_by
+      For each question i:
+        qid_i, marks_i, instruction_i, model_i, question_file_i, diagram_file_i (optional)
+    We'll accept up to N questions from the form (front-end will send).
+    """
+    
+    exam_id = request.form.get("exam_id") or f"exam_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    title = request.form.get("title", "").strip() or f"Exam {exam_id}"
+    created_by = request.form.get("created_by", "Teacher")
+    created_at = datetime.datetime.now().isoformat()
+
+    # create folder for exam files
+    exam_folder = os.path.join(EXAMS_DIR, exam_id)
+    os.makedirs(exam_folder, exist_ok=True)
+
+    # collect questions
+    questions = []
+    # front-end should send question indices in a hidden input 'q_count'
+    try:
+        q_count = int(request.form.get("q_count", "0"))
+    except:
+        q_count = 0
+
+    for i in range(1, q_count+1):
+        q_prefix = f"q{i}"
+        qid = request.form.get(f"{q_prefix}_id") or f"{q_prefix}"
+        marks = int(request.form.get(f"{q_prefix}_marks") or 0)
+        instruction = request.form.get(f"{q_prefix}_instruction") or ""
+        model_answer = request.form.get(f"{q_prefix}_model") or ""
+
+        # save uploaded question image
+        qfile = request.files.get(f"{q_prefix}_question")
+        q_filename = ""
+        if qfile:
+            q_filename = secure_filename(qfile.filename)
+            if not q_filename:
+                q_filename = f"{qid}_question.png"
+            qfile.save(os.path.join(exam_folder, q_filename))
+
+        # save uploaded diagram image (optional)
+        dfile = request.files.get(f"{q_prefix}_diagram")
+        d_filename = ""
+        if dfile:
+            d_filename = secure_filename(dfile.filename)
+            if not d_filename:
+                d_filename = f"{qid}_diagram.png"
+            dfile.save(os.path.join(exam_folder, d_filename))
+
+        questions.append({
+            "qid": qid,
+            "marks": marks,
+            "instruction": instruction,
+            "question_image": q_filename,
+            "diagram_image": d_filename,
+            "model_answer": model_answer
+        })
+
+    exam_json = {
+        "exam_id": exam_id,
+        "title": title,
+        "created_by": created_by,
+        "created_at": created_at,
+        "questions": questions
+    }
+
+    # write json
+    with open(os.path.join(exam_folder, "exam.json"), "w", encoding="utf-8") as f:
+        json.dump(exam_json, f, indent=2)
+
+    # return preview link
+    preview_url = url_for("exam_preview", exam_id=exam_id)
+    return f"Exam saved: <a href='{preview_url}' target='_blank'>{preview_url}</a>"
+
+# --- List exams (simple listing) ---
+@app.route("/teacher/exams")
+def teacher_exams():
+    items = []
+    for name in os.listdir(EXAMS_DIR):
+        path = os.path.join(EXAMS_DIR, name)
+        if os.path.isdir(path):
+            json_path = os.path.join(path, "exam.json")
+            if os.path.exists(json_path):
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                items.append({"exam_id": data.get("exam_id"), "title": data.get("title"), "created_at": data.get("created_at")})
+    return render_template("list_exams.html", exams=items)
+
+# --- Serve exam files ---
+@app.route("/exam_file/<exam_id>/<filename>")
+def exam_file(exam_id, filename):
+    return send_from_directory(os.path.join(EXAMS_DIR, exam_id), filename)
+
+# --- Preview exam (student view for the first question for now) ---
+@app.route("/exam/preview/<exam_id>")
+def exam_preview(exam_id):
+    exam_folder = os.path.join(EXAMS_DIR, exam_id)
+    json_path = os.path.join(exam_folder, "exam.json")
+    if not os.path.exists(json_path):
+        return "Exam not found", 404
+    with open(json_path, "r", encoding="utf-8") as f:
+        exam = json.load(f)
+    # For preview we'll render first question (extend later to full multi-question UI)
+    first_q = exam["questions"][0] if exam["questions"] else None
+    return render_template("exam_preview.html", exam=exam, question=first_q, exam_id=exam_id)
 
 # -----------------------------
 # Run local
