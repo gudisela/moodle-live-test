@@ -378,28 +378,42 @@ def teacher_exams():
 def start_exam(exam_id):
     exam_path = os.path.join(EXAMS_DIR, exam_id)
 
+    # Check exam folder exists
     if not os.path.exists(exam_path):
         return f"Exam {exam_id} not found", 404
 
-    import json
+    meta_path = os.path.join(exam_path, "meta.json")
+    qlist_path = os.path.join(exam_path, "questions.json")
 
-    with open(os.path.join(exam_path, "meta.json")) as f:
+    # Check needed files exist
+    if not os.path.exists(meta_path) or not os.path.exists(qlist_path):
+        return "Exam files missing (meta.json or questions.json)", 500
+
+    # Load meta
+    with open(meta_path) as f:
         meta = json.load(f)
 
-    with open(os.path.join(exam_path, "questions.json")) as f:
+    # Load question list
+    with open(qlist_path) as f:
         questions = json.load(f)
 
+    # Render student exam
     return render_template(
         "student_exam.html",
         exam_id=exam_id,
-        exam_title=meta["title"],
+        exam_title=meta.get("title", "Untitled Exam"),
         questions=questions
     )
 
+
+
 # --- Serve exam files ---
+
 @app.route("/exam_file/<exam_id>/<filename>")
 def exam_file(exam_id, filename):
-    return send_from_directory(os.path.join(EXAMS_DIR, exam_id), filename)
+    folder = os.path.join(EXAMS_DIR, exam_id)
+    return send_from_directory(folder, filename)
+
 
 # --- Preview exam (student view for the first question for now) ---
 @app.route("/exam/preview/<exam_id>")
